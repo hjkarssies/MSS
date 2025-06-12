@@ -93,12 +93,6 @@ wn = 0.1 * diag([1 1 3]);    % Natural frequencies for PID tuning
 zeta = 1.0 * diag([1 1 1]);  % Damping ratios for PID tuning
 T_f = 30;                    % Time constant for the setpoint low-pass filter (s)
 
-% % Initialize the nonlinear MIMO PID controller
-% [~,~,M] = osv();             % OSV 6x6 mass matrix
-% wn = 0.1 * diag([0.5 0.5 3]);    % Natural frequencies for PID tuning
-% zeta = 1.0 * diag([10 10 1]);  % Damping ratios for PID tuning
-% T_f = 30;                    % Time constant for the setpoint low-pass filter (s)
-
 % Initialize state vectors for the simulation:
 eta = [0, 0, 0, deg2rad(5), deg2rad(2), deg2rad(30)]';  % Euler angles and positions
 nu = [0, 0, 0, 0, 0, 0]';                     % Velocity vector
@@ -136,10 +130,6 @@ for i = 1:nTimeSteps
 
     % Calculate control forces using the nonlinear MIMO PID controller
     tau = PIDnonlinearMIMO(eta, nu, eta_ref, M, wn, zeta, T_f, h);
-
-    % % New INCA with azimuth optimization
-    % du_bounds = [-ones(1,4); ones(1,4)];
-    % da_bounds = [-deg2rad(5)*ones(1,2); deg2rad(5)*ones(1,2)];
     
     % New INCA with azimuth optimization
     du_bounds = [lb(3:6) - u_old'; ub(3:6) - u_old'];
@@ -330,114 +320,3 @@ set(findall(gcf,'type','text'),'FontSize',14)
 set(findall(gcf,'type','legend','Location',legendLocation),'FontSize',14)
 
 end
-
-% %% FUNCTIONS FOR DYNAMIC OPTIMIZATION
-% function [alpha_opt, u_opt, slack] = ...
-%     optimalAlloc(tau, lb, ub, alpha_old, u_old, l_x, l_y, K_thr, h)
-% % [alpha_opt, u_opt, slack] = ...
-% %    optimalAlloc(tau, lb, ub, alpha_old, u_old, l_x, l_y, K_thr, h)
-% % Constrained allocation is implemented by using sequential quadratic
-% % programming (SQP) to find the optimal (alpha, u) values when there
-% % are amplitude and rate saturations. The mathematical model is
-% %
-% % tau = T_thr(alpha) * K_thr * u
-% %   u = abs(n/n_max) * (n/n_max) - normalized squared propeller speed
-% %
-% % where the six controls are
-% %
-% % alpha = [alpha1, alpha2]'                        azimuth angles
-% % u = [bowAzimuth, starboardAzimuth, portAzimuth]  squared propeller speed
-% %
-% % Inputs:
-% %  tau: vector of generalized forces (surge, sway, yaw)
-% %  lb: vector of lower bounds
-% %  ub: vector of upper bounds
-% %  alpha_old: previous values of alpha
-% %  u_old: previous values of u
-% %  l_x: vector of x-coordinates, thruster lever arms
-% %  l_y: vector of y-coordinates, thruster lever arms
-% %  K_thr: diagonal matrix of maximum thrust
-% %  h: sampling time
-% %
-% % Outputs:
-% %  alpha_opt: optimal alpha values
-% %  u_opt: optimal u values, normalized
-% %  slack: norm of slack variables s = tau - T_thr(alpha) * K_thr * u
-% %
-% % Author:    Thor I. Fossen
-% % Date:      2024-03-25
-% % Revisions:
-
-% % Objective function
-% fun = @(x) objectiveFunction(x,alpha_old,u_old);
-
-% % Initial guess: x0 = [az1 az2 u1 u2 u3 u4 s1 s2 s3]
-% x0 = [deg2rad(-28) deg2rad(28)  0 0 0 0  0 0 0];
-
-% % Use fmincon and sequential quadratic programming (SQP) to optimize
-% nonlcon = @(x) constraints(x, alpha_old, u_old, l_x, l_y, K_thr, tau, h);
-% options = optimoptions('fmincon','Display','off','Algorithm','sqp');
-% x_opt = fmincon(fun, x0, [], [], [], [], lb, ub, nonlcon, options);
-
-% % Extract results
-% alpha_opt = x_opt(1:2)';
-% u_opt = x_opt(3:6)';
-% slack = norm( x_opt(7:9) );
-
-% end
-
-% % Cost function
-% function cost = objectiveFunction(x,alpha_old,u_old)
-
-% alpha = x(1:2)';    % Azimuth angles
-% u = x(3:6)';        % Quadratic controls
-% s = x(7:9)';        % Slack variables: tau = T(alpha) * K_thr * u + s
-
-% w1 = 1;             % Weight for squared u
-% w2 = 100;           % Weight for squared slack variable s
-% w3 = 1;             % Weight for squared change in alpha
-% w4 = 0.1;           % Weight for squared change in u
-
-% cost = w1 * norm(u)^2 ...
-%     + w2 * norm(s)^2 ...
-%     + w3 * norm(alpha - alpha_old)^2 ...
-%     + w4 * norm(u - u_old)^2;
-
-% end
-
-% % Constraints
-% function [c, ceq] = constraints(x, alpha_old, u_old, l_x, l_y, K_thr,tau,h)
-
-% alpha = x(1:2)';     % Azimuth angles
-% u = x(3:6)';         % Quadratic controls
-% s = x(7:9)';         % Slack variables: tau = T(alpha) * K_thr * u + s
-
-% % Maximum azimuth angle and pitch rates
-% max_rate_alpha = 0.3;  % 0.3 rad/s = 17.2 deg/s
-% max_rate_u = 0.1;               
-
-% % Separate positive and negative constraints to avoid abs
-% c(1) = ( alpha(1) - alpha_old(1) ) / h - max_rate_alpha; % Positive constraint for alpha(1)
-% c(2) = -( alpha(1) - alpha_old(1) ) / h - max_rate_alpha; % Negative constraint for alpha(1)
-
-% c(3) = ( alpha(2) - alpha_old(2) ) / h - max_rate_alpha; % Positive constraint for alpha(2)
-% c(4) = -( alpha(2) - alpha_old(2) ) / h - max_rate_alpha; % Negative constraint for alpha(2)
-
-% c(5) = ( u(1) - u_old(1) ) / h - max_rate_u; % Positive constraint for u(1)
-% c(6) = -( u(1) - u_old(1) ) / h - max_rate_u; % Negative constraint for u(1)
-
-% c(7) = ( u(2) - u_old(2) ) / h - max_rate_u; % Positive constraint for u(2)
-% c(8) = -( u(2) - u_old(2) ) / h - max_rate_u; % Negative constraint for u(2)
-
-% c(9) = ( u(3) - u_old(3) ) / h - max_rate_u; % Positive constraint for u(3)
-% c(10) = -( u(3) - u_old(3) ) / h - max_rate_u; % Negative constraint for u(3)
-
-% c(11) = ( u(4) - u_old(4) ) / h - max_rate_u; % Positive constraint for u(4)
-% c(12) = -( u(4) - u_old(4) ) / h - max_rate_u; % Negative constraint for u(4)
-
-% % Equality constraint
-% T_alpha = thrConfig( {'T', 'T', alpha(1), alpha(2)}, l_x, l_y);
-
-% ceq = T_alpha * K_thr * u - tau + s;
-
-% end
